@@ -24,11 +24,13 @@ public class DocumentsController : ControllerBase
         return Ok("PDF Assistant API is working!");
     }
 
+
     [HttpPost("upload")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxFileSize)]
     public async Task<IActionResult> Upload(
-        [FromForm] UploadDocumentRequest request)
+        [FromForm] UploadDocumentRequest request,
+        CancellationToken cancellationToken)
     {
         var file = request.File;
 
@@ -55,35 +57,24 @@ public class DocumentsController : ControllerBase
         await using var inputStream = file.OpenReadStream();
 
         byte[] header = new byte[5];
-        int bytesRead = await inputStream.ReadAsync(header);
+
+        int bytesRead = await inputStream.ReadAsync(
+            header,
+            cancellationToken);
 
         bool isPdf = bytesRead == 5 &&
-                     System.Text.Encoding.ASCII.GetString(header) == "%PDF-";
+            System.Text.Encoding.ASCII.GetString(header) == "%PDF-";
 
         if (!isPdf)
         {
             return BadRequest("Invalid PDF file.");
         }
 
-        var uploadFolder = Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "App_Data",
-            "UploadedFiles");
-
-        Directory.CreateDirectory(uploadFolder);
-
-        var fileName = $"{Guid.NewGuid()}.pdf";
-        var filePath = Path.Combine(uploadFolder, fileName);
-
         inputStream.Position = 0;
 
-        await using (var outputStream = new FileStream(
-            filePath,
-            FileMode.CreateNew,
-            FileAccess.Write))
-        {
-            await inputStream.CopyToAsync(outputStream);
-        }
+        var fileName = await _documentService.SaveDocumentAsync(
+            inputStream,
+            cancellationToken);
 
         return Ok(new
         {
@@ -93,6 +84,7 @@ public class DocumentsController : ControllerBase
             SizeInBytes = file.Length
         });
     }
+
 
     [HttpGet("{fileName}/text")]
     public async Task<IActionResult> GetPdfText(
