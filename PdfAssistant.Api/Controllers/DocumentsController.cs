@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using PdfAssistant.Api.Models;
+using System.Security.Cryptography.X509Certificates;
+using UglyToad.PdfPig;
 
 namespace PdfAssistant.Api.Controllers;
 
@@ -26,14 +28,14 @@ public class DocumentsController : ControllerBase
             return BadRequest("Please select a a PDF file.");
         }
 
-        if(file.Length > MaxFileSize)
+        if (file.Length > MaxFileSize)
         {
             return BadRequest("File size cannot exceed 10 MB.");
         }
 
         var extension = Path.GetExtension(file.FileName);
 
-        if(!string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest("Only PDF files are allowed.");
         }
@@ -78,5 +80,47 @@ public class DocumentsController : ControllerBase
             OriginalFileName = Path.GetFileName(file.FileName),
             SizeInBytes = file.Length
         });
+    }
+
+    [HttpGet("{fileName}/text")]
+    public IActionResult GetPdfText(string fileName)
+    {
+        var uploadFolder = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "App_Data",
+            "UploadedFiles"
+        );
+
+        if (string.IsNullOrWhiteSpace(fileName) ||
+        !string.Equals(fileName, Path.GetFileName(fileName),
+            StringComparison.Ordinal))
+        {
+            return BadRequest("Invalid file name.");
+        }
+
+        var filePath = Path.Combine(uploadFolder, fileName);
+
+        if (!System.IO.File.Exists(filePath))
+        {
+            return NotFound("PDF file not found.");
+        }
+
+        using var document = PdfDocument.Open(filePath);
+
+        var pages = document.GetPages()
+            .Select(page => new
+            {
+                PageNumber = page.Number,
+                Text = page.Text
+            })
+            .ToList();
+
+        return Ok(new
+        {
+            FileName = fileName,
+            PageCount = document.NumberOfPages,
+            Pages = pages
+        });
+
     }
 }

@@ -1,3 +1,6 @@
 <Solution>
   <Project Path="PdfAssistant.Api/PdfAssistant.Api.csproj" />
+  <Project Path="PdfAssistant.Application/PdfAssistant.Application.csproj" />
+  <Project Path="PdfAssistant.Domain/PdfAssistant.Domain.csproj" />
+  <Project Path="PdfAssistant.Infrastructure/PdfAssistant.Infrastructure.csproj" />
 </Solution>
