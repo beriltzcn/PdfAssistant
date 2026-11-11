@@ -1,7 +1,7 @@
+
 using Microsoft.AspNetCore.Mvc;
 using PdfAssistant.Api.Models;
-using System.Security.Cryptography.X509Certificates;
-using UglyToad.PdfPig;
+using PdfAssistant.Application.Interfaces;
 
 namespace PdfAssistant.Api.Controllers;
 
@@ -9,7 +9,14 @@ namespace PdfAssistant.Api.Controllers;
 [Route("api/[controller]")]
 public class DocumentsController : ControllerBase
 {
-    private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB
+    private const long MaxFileSize = 10 * 1024 * 1024;
+
+    private readonly IDocumentService _documentService;
+
+    public DocumentsController(IDocumentService documentService)
+    {
+        _documentService = documentService;
+    }
 
     [HttpGet]
     public IActionResult Get()
@@ -20,12 +27,14 @@ public class DocumentsController : ControllerBase
     [HttpPost("upload")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxFileSize)]
-    public async Task<IActionResult> Upload([FromForm] UploadDocumentRequest request)
+    public async Task<IActionResult> Upload(
+        [FromForm] UploadDocumentRequest request)
     {
         var file = request.File;
+
         if (file == null || file.Length == 0)
         {
-            return BadRequest("Please select a a PDF file.");
+            return BadRequest("Please select a PDF file.");
         }
 
         if (file.Length > MaxFileSize)
@@ -35,7 +44,10 @@ public class DocumentsController : ControllerBase
 
         var extension = Path.GetExtension(file.FileName);
 
-        if (!string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(
+            extension,
+            ".pdf",
+            StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest("Only PDF files are allowed.");
         }
@@ -45,7 +57,8 @@ public class DocumentsController : ControllerBase
         byte[] header = new byte[5];
         int bytesRead = await inputStream.ReadAsync(header);
 
-        bool isPdf = bytesRead == 5 && System.Text.Encoding.ASCII.GetString(header) == "%PDF-";
+        bool isPdf = bytesRead == 5 &&
+                     System.Text.Encoding.ASCII.GetString(header) == "%PDF-";
 
         if (!isPdf)
         {
@@ -55,12 +68,11 @@ public class DocumentsController : ControllerBase
         var uploadFolder = Path.Combine(
             Directory.GetCurrentDirectory(),
             "App_Data",
-            "UploadedFiles"
-        );
+            "UploadedFiles");
 
         Directory.CreateDirectory(uploadFolder);
 
-        var fileName = $"{Guid.NewGuid()}";
+        var fileName = $"{Guid.NewGuid()}.pdf";
         var filePath = Path.Combine(uploadFolder, fileName);
 
         inputStream.Position = 0;
@@ -83,20 +95,23 @@ public class DocumentsController : ControllerBase
     }
 
     [HttpGet("{fileName}/text")]
-    public IActionResult GetPdfText(string fileName)
+    public async Task<IActionResult> GetPdfText(
+        string fileName,
+        CancellationToken cancellationToken)
     {
-        var uploadFolder = Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "App_Data",
-            "UploadedFiles"
-        );
-
         if (string.IsNullOrWhiteSpace(fileName) ||
-        !string.Equals(fileName, Path.GetFileName(fileName),
-            StringComparison.Ordinal))
+            !string.Equals(
+                fileName,
+                Path.GetFileName(fileName),
+                StringComparison.Ordinal))
         {
             return BadRequest("Invalid file name.");
         }
+
+        var uploadFolder = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "App_Data",
+            "UploadedFiles");
 
         var filePath = Path.Combine(uploadFolder, fileName);
 
@@ -105,22 +120,15 @@ public class DocumentsController : ControllerBase
             return NotFound("PDF file not found.");
         }
 
-        using var document = PdfDocument.Open(filePath);
-
-        var pages = document.GetPages()
-            .Select(page => new
-            {
-                PageNumber = page.Number,
-                Text = page.Text
-            })
-            .ToList();
+        var pages = await _documentService.ExtractTextAsync(
+            filePath,
+            cancellationToken);
 
         return Ok(new
         {
             FileName = fileName,
-            PageCount = document.NumberOfPages,
+            PageCount = pages.Count,
             Pages = pages
         });
-
     }
 }
