@@ -35,4 +35,19 @@ public class LocalDocumentStorage : IDocumentStorage
 
         return fileName;
     }
+
+    public string? GetFilePath(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) ||
+            !string.Equals(
+                fileName,
+                Path.GetFileName(fileName),
+                StringComparison.Ordinal))
+        {
+            return null;
+        }
+        var filePath = Path.Combine(_uploadFolder, fileName);
+
+        return File.Exists(filePath) ? filePath : null;
+    }
 }

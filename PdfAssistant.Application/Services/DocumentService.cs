@@ -27,9 +27,15 @@ public class DocumentService : IDocumentService
     }
 
     public async Task<IReadOnlyList<PdfPageText>> ExtractTextAsync(
-        string filePath,
+        string fileName,
         CancellationToken cancellationToken = default)
     {
+        var filePath = _documentStorage.GetFilePath(fileName);
+
+        if (filePath is null)
+        {
+            return null;
+        }
         return await _pdfTextExtractor.ExtractTextAsync(
             filePath,
             cancellationToken);

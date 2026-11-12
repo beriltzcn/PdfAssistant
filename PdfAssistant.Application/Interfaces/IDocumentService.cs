@@ -10,6 +10,6 @@ public interface IDocumentService
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PdfPageText>> ExtractTextAsync(
-        string filePath,
+        string fileName,
         CancellationToken cancellationToken = default);
 }

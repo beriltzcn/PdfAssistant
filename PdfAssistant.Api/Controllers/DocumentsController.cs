@@ -86,35 +86,20 @@ public class DocumentsController : ControllerBase
     }
 
 
+
     [HttpGet("{fileName}/text")]
     public async Task<IActionResult> GetPdfText(
         string fileName,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(fileName) ||
-            !string.Equals(
-                fileName,
-                Path.GetFileName(fileName),
-                StringComparison.Ordinal))
-        {
-            return BadRequest("Invalid file name.");
-        }
+        var pages = await _documentService.ExtractTextAsync(
+            fileName,
+            cancellationToken);
 
-        var uploadFolder = Path.Combine(
-            Directory.GetCurrentDirectory(),
-            "App_Data",
-            "UploadedFiles");
-
-        var filePath = Path.Combine(uploadFolder, fileName);
-
-        if (!System.IO.File.Exists(filePath))
+        if (pages is null)
         {
             return NotFound("PDF file not found.");
         }
-
-        var pages = await _documentService.ExtractTextAsync(
-            filePath,
-            cancellationToken);
 
         return Ok(new
         {
@@ -123,4 +108,5 @@ public class DocumentsController : ControllerBase
             Pages = pages
         });
     }
+
 }
