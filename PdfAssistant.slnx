@@ -3,4 +3,5 @@
   <Project Path="PdfAssistant.Application/PdfAssistant.Application.csproj" />
   <Project Path="PdfAssistant.Domain/PdfAssistant.Domain.csproj" />
   <Project Path="PdfAssistant.Infrastructure/PdfAssistant.Infrastructure.csproj" />
+  <Project Path="PdfAssistant.Tests/PdfAssistant.Tests.csproj" />
 </Solution>
