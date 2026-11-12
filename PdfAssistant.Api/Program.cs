@@ -3,6 +3,8 @@ using PdfAssistant.Application.Interfaces;
 using PdfAssistant.Application.Services;
 using PdfAssistant.Infrastructure.Pdf;
 using PdfAssistant.Infrastructure.Storage;
+using PdfAssistant.Infrastructure.Configuration;
+using PdfAssistant.Infrastructure.Embeddings;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +12,11 @@ builder.Services.AddControllers();
 
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
+
+builder.Services.Configure<OpenRouterOptions>(
+    builder.Configuration.GetSection(OpenRouterOptions.SectionName));
+
+builder.Services.AddHttpClient<IEmbeddingService, OpenRouterEmbeddingService>();
 
 var uploadFolder = Path.Combine(
     builder.Environment.ContentRootPath,

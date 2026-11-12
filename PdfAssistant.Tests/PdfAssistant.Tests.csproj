@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PdfAssistant.Application\PdfAssistant.Application.csproj" />
+    <ProjectReference Include="..\PdfAssistant.Infrastructure\PdfAssistant.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
