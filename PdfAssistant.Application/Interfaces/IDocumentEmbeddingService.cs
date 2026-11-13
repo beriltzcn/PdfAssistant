@@ -4,7 +4,7 @@ namespace PdfAssistant.Application.Interfaces;
 
 public interface IDocumentEmbeddingService
 {
-    Task<IReadlOnlyList<DocumentEmbedding>> GenerateAsync(
+    Task<IReadOnlyList<DocumentEmbedding>> GenerateAsync(
         string fileName,
         CancellationToken cancellationToken = default
         );

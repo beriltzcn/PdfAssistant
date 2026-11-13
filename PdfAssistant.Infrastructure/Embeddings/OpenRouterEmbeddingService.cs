@@ -45,7 +45,14 @@ public class OpenRouterEmbeddingService : IEmbeddingService
             request,
             cancellationToken);
 
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(
+                cancellationToken);
+
+            throw new HttpRequestException(
+                $"OpenRouter error: {(int)response.StatusCode} - {errorBody}");
+        }
 
         var result = await response.Content
             .ReadFromJsonAsync<EmbeddingResponse>(

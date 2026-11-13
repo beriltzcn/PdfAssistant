@@ -7,5 +7,5 @@ public class OpenRouterOptions
     public string ApiKey { get; set; } = string.Empty;
 
     public string Model { get; set; } =
-        "nvidia/nemotron-3.5-embed-1b:free";
+        "nvidia/nemotron-3-embed-1b:free";
 }

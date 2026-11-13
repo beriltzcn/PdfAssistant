@@ -13,9 +13,14 @@ public class DocumentsController : ControllerBase
 
     private readonly IDocumentService _documentService;
 
-    public DocumentsController(IDocumentService documentService)
+    private readonly IDocumentEmbeddingService _documentEmbeddingService;
+
+    public DocumentsController(
+    IDocumentService documentService,
+    IDocumentEmbeddingService documentEmbeddingService)
     {
         _documentService = documentService;
+        _documentEmbeddingService = documentEmbeddingService;
     }
 
     [HttpGet]
@@ -106,6 +111,23 @@ public class DocumentsController : ControllerBase
             FileName = fileName,
             PageCount = pages.Count,
             Pages = pages
+        });
+    }
+
+    [HttpPost("{fileName}/embeddings")]
+    public async Task<IActionResult> GenerateEmbeddings(
+    string fileName,
+    CancellationToken cancellationToken)
+    {
+        var embeddings = await _documentEmbeddingService.GenerateAsync(
+            fileName,
+            cancellationToken);
+
+        return Ok(new
+        {
+            FileName = fileName,
+            ChunkCount = embeddings.Count,
+            EmbeddingDimensions = embeddings.FirstOrDefault()?.Vector.Count ?? 0
         });
     }
 
