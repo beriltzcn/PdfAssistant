@@ -9,15 +9,18 @@ public class DocumentEmbeddingService : IDocumentEmbeddingService
     private readonly IDocumentService _documentService;
     private readonly ITextChunker _textChunker;
     private readonly IEmbeddingService _embeddingService;
+    private readonly IDocumentChunkRepository _documentChunkRepository;
 
     public DocumentEmbeddingService(
-        IDocumentService documentService,
-        ITextChunker textChunker,
-        IEmbeddingService embeddingService)
+    IDocumentService documentService,
+    ITextChunker textChunker,
+    IEmbeddingService embeddingService,
+    IDocumentChunkRepository documentChunkRepository)
     {
         _documentService = documentService;
         _textChunker = textChunker;
         _embeddingService = embeddingService;
+        _documentChunkRepository = documentChunkRepository;
     }
 
     public async Task<IReadOnlyList<DocumentEmbedding>> GenerateAsync(
@@ -50,10 +53,17 @@ public class DocumentEmbeddingService : IDocumentEmbeddingService
                 "Embedding count does not match chunk count.");
         }
 
-        return chunks
-            .Select((chunk, index) => new DocumentEmbedding(
-                chunk,
-                vectors[index]))
-            .ToList();
+        var documentEmbeddings = chunks
+     .Select((chunk, index) => new DocumentEmbedding(
+         chunk,
+         vectors[index]))
+     .ToList();
+
+        await _documentChunkRepository.SaveAsync(
+            fileName,
+            documentEmbeddings,
+            cancellationToken);
+
+        return documentEmbeddings;
     }
 }

@@ -5,10 +5,24 @@ using PdfAssistant.Infrastructure.Pdf;
 using PdfAssistant.Infrastructure.Storage;
 using PdfAssistant.Infrastructure.Configuration;
 using PdfAssistant.Infrastructure.Embeddings;
+using Microsoft.EntityFrameworkCore;
+using PdfAssistant.Infrastructure.Data;
+using PdfAssistant.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
+var databasePath = Path.Combine(
+    builder.Environment.ContentRootPath,
+    "App_Data",
+    "pdfassistant.db");
+
+Directory.CreateDirectory(
+    Path.GetDirectoryName(databasePath)!);
+
+builder.Services.AddDbContext<PdfAssistantDbContext>(options =>
+    options.UseSqlite($"Data Source={databasePath}"));
 
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
@@ -23,6 +37,7 @@ builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
 builder.Services.AddScoped<ITextChunker, TextChunker>();
 builder.Services.AddScoped<IDocumentEmbeddingService, DocumentEmbeddingService>();
+builder.Services.AddScoped<IDocumentChunkRepository, DocumentChunkRepository>();
 
 var uploadFolder = Path.Combine(
     builder.Environment.ContentRootPath,
