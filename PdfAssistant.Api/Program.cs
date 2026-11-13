@@ -18,6 +18,11 @@ builder.Services.Configure<OpenRouterOptions>(
 
 builder.Services.AddHttpClient<IEmbeddingService, OpenRouterEmbeddingService>();
 
+builder.Services.AddScoped<ITextChunker, TextChunker>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
+builder.Services.AddScoped<ITextChunker, TextChunker>();
+
 var uploadFolder = Path.Combine(
     builder.Environment.ContentRootPath,
     "App_Data",
