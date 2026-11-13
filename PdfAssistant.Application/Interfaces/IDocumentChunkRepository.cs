@@ -8,4 +8,9 @@ public interface IDocumentChunkRepository
      string fileName,
      IReadOnlyList<DocumentEmbedding> embeddings,
      CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<DocumentEmbedding>> GetByFileNameAsync(
+    string fileName,
+    CancellationToken cancellationToken = default);
+
 }

@@ -14,13 +14,16 @@ public class DocumentsController : ControllerBase
     private readonly IDocumentService _documentService;
 
     private readonly IDocumentEmbeddingService _documentEmbeddingService;
+    private readonly IDocumentSearchService _documentSearchService;
 
     public DocumentsController(
     IDocumentService documentService,
-    IDocumentEmbeddingService documentEmbeddingService)
+    IDocumentEmbeddingService documentEmbeddingService,
+    IDocumentSearchService documentSearchService)
     {
         _documentService = documentService;
         _documentEmbeddingService = documentEmbeddingService;
+        _documentSearchService = documentSearchService;
     }
 
     [HttpGet]
@@ -129,6 +132,21 @@ public class DocumentsController : ControllerBase
             ChunkCount = embeddings.Count,
             EmbeddingDimensions = embeddings.FirstOrDefault()?.Vector.Count ?? 0
         });
+    }
+
+    [HttpPost("{fileName}/search")]
+    public async Task<IActionResult> Search(
+    string fileName,
+    [FromBody] string question,
+    CancellationToken cancellationToken)
+    {
+        var results = await _documentSearchService.SearchAsync(
+            fileName,
+            question,
+            topK: 5,
+            cancellationToken);
+
+        return Ok(results);
     }
 
 }

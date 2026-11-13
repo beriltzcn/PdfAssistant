@@ -38,6 +38,9 @@ builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
 builder.Services.AddScoped<ITextChunker, TextChunker>();
 builder.Services.AddScoped<IDocumentEmbeddingService, DocumentEmbeddingService>();
 builder.Services.AddScoped<IDocumentChunkRepository, DocumentChunkRepository>();
+builder.Services.AddScoped<
+    IDocumentSearchService,
+    DocumentSearchService>();
 
 var uploadFolder = Path.Combine(
     builder.Environment.ContentRootPath,
