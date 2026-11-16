@@ -1,13 +1,14 @@
 
+using Microsoft.EntityFrameworkCore;
 using PdfAssistant.Application.Interfaces;
 using PdfAssistant.Application.Services;
-using PdfAssistant.Infrastructure.Pdf;
-using PdfAssistant.Infrastructure.Storage;
+using PdfAssistant.Infrastructure.Chat;
 using PdfAssistant.Infrastructure.Configuration;
-using PdfAssistant.Infrastructure.Embeddings;
-using Microsoft.EntityFrameworkCore;
 using PdfAssistant.Infrastructure.Data;
+using PdfAssistant.Infrastructure.Embeddings;
+using PdfAssistant.Infrastructure.Pdf;
 using PdfAssistant.Infrastructure.Repositories;
+using PdfAssistant.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,6 +42,12 @@ builder.Services.AddScoped<IDocumentChunkRepository, DocumentChunkRepository>();
 builder.Services.AddScoped<
     IDocumentSearchService,
     DocumentSearchService>();
+builder.Services.AddHttpClient<
+    IChatCompletionService,
+    OpenRouterChatCompletionService>();
+builder.Services.AddScoped<
+    IDocumentAnswerService,
+    DocumentAnswerService>();
 
 var uploadFolder = Path.Combine(
     builder.Environment.ContentRootPath,

@@ -15,15 +15,19 @@ public class DocumentsController : ControllerBase
 
     private readonly IDocumentEmbeddingService _documentEmbeddingService;
     private readonly IDocumentSearchService _documentSearchService;
+    private readonly IDocumentAnswerService _documentAnswerService;
 
     public DocumentsController(
     IDocumentService documentService,
     IDocumentEmbeddingService documentEmbeddingService,
-    IDocumentSearchService documentSearchService)
+    IDocumentSearchService documentSearchService,
+    IDocumentAnswerService documentAnswerService)
+        
     {
         _documentService = documentService;
         _documentEmbeddingService = documentEmbeddingService;
         _documentSearchService = documentSearchService;
+        _documentAnswerService = documentAnswerService;
     }
 
     [HttpGet]
@@ -147,6 +151,25 @@ public class DocumentsController : ControllerBase
             cancellationToken);
 
         return Ok(results);
+    }
+
+    [HttpPost("{fileName}/ask")]
+    public async Task<IActionResult> Ask(
+    string fileName,
+    [FromBody] string question,
+    CancellationToken cancellationToken)
+    {
+        var answer = await _documentAnswerService.AskAsync(
+            fileName,
+            question,
+            cancellationToken);
+
+        return Ok(new
+        {
+            FileName = fileName,
+            Question = question,
+            Answer = answer
+        });
     }
 
 }

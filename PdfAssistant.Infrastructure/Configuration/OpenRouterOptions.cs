@@ -8,4 +8,5 @@ public class OpenRouterOptions
 
     public string Model { get; set; } =
         "nvidia/nemotron-3-embed-1b:free";
+    public string ChatModel { get; set; } = "openrouter/free";
 }
