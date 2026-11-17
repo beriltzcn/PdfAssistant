@@ -6,10 +6,10 @@ namespace PdfAssistant.Infrastructure.Models;
 
 public class ChatCompletionResponse
 {
-    public List<ChatCompletionChoise> Choices { get; set; } = new();
+    public List<ChatCompletionChoice> Choices { get; set; } = [];
 }
 
-public class ChatCompletionChoise
+public class ChatCompletionChoice
 {
-    public ChatMessage Message { get; set; }
+    public ChatMessage Message { get; set; } = new();
 }

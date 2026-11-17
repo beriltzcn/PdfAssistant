@@ -50,4 +50,17 @@ public class LocalDocumentStorage : IDocumentStorage
 
         return File.Exists(filePath) ? filePath : null;
     }
+
+    public bool Delete(string fileName)
+    {
+        var filePath = GetFilePath(fileName);
+
+        if (filePath is null)
+        {
+            return false;
+        }
+
+        File.Delete(filePath);
+        return true;
+    }
 }

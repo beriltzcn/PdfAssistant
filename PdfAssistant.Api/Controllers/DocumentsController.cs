@@ -1,7 +1,7 @@
-
 using Microsoft.AspNetCore.Mvc;
 using PdfAssistant.Api.Models;
 using PdfAssistant.Application.Interfaces;
+using PdfAssistant.Application.Models;
 
 namespace PdfAssistant.Api.Controllers;
 
@@ -12,30 +12,49 @@ public class DocumentsController : ControllerBase
     private const long MaxFileSize = 10 * 1024 * 1024;
 
     private readonly IDocumentService _documentService;
-
     private readonly IDocumentEmbeddingService _documentEmbeddingService;
     private readonly IDocumentSearchService _documentSearchService;
     private readonly IDocumentAnswerService _documentAnswerService;
+    private readonly IDocumentProcessingService _documentProcessingService;
+    private readonly IDocumentDeletionService _documentDeletionService;
 
     public DocumentsController(
-    IDocumentService documentService,
-    IDocumentEmbeddingService documentEmbeddingService,
-    IDocumentSearchService documentSearchService,
-    IDocumentAnswerService documentAnswerService)
-        
+        IDocumentService documentService,
+        IDocumentEmbeddingService documentEmbeddingService,
+        IDocumentSearchService documentSearchService,
+        IDocumentAnswerService documentAnswerService,
+        IDocumentProcessingService documentProcessingService,
+        IDocumentDeletionService documentDeletionService)
     {
         _documentService = documentService;
         _documentEmbeddingService = documentEmbeddingService;
         _documentSearchService = documentSearchService;
         _documentAnswerService = documentAnswerService;
+        _documentProcessingService = documentProcessingService;
+        _documentDeletionService = documentDeletionService;
     }
 
     [HttpGet]
-    public IActionResult Get()
+    [ProducesResponseType(
+        typeof(IReadOnlyList<DocumentSummary>),
+        StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAll(
+        CancellationToken cancellationToken)
     {
-        return Ok("PDF Assistant API is working!");
+        var documents = await _documentService.GetDocumentsAsync(
+            cancellationToken);
+
+        return Ok(documents);
     }
 
+    [HttpGet("health")]
+    public IActionResult Health()
+    {
+        return Ok(new
+        {
+            Message = "PDF Assistant API is working!"
+        });
+    }
 
     [HttpPost("upload")]
     [Consumes("multipart/form-data")]
@@ -46,7 +65,7 @@ public class DocumentsController : ControllerBase
     {
         var file = request.File;
 
-        if (file == null || file.Length == 0)
+        if (file is null || file.Length == 0)
         {
             return BadRequest("Please select a PDF file.");
         }
@@ -59,23 +78,23 @@ public class DocumentsController : ControllerBase
         var extension = Path.GetExtension(file.FileName);
 
         if (!string.Equals(
-            extension,
-            ".pdf",
-            StringComparison.OrdinalIgnoreCase))
+                extension,
+                ".pdf",
+                StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest("Only PDF files are allowed.");
         }
 
         await using var inputStream = file.OpenReadStream();
 
-        byte[] header = new byte[5];
+        var header = new byte[5];
 
-        int bytesRead = await inputStream.ReadAsync(
+        var bytesRead = await inputStream.ReadAsync(
             header,
             cancellationToken);
 
-        bool isPdf = bytesRead == 5 &&
-            System.Text.Encoding.ASCII.GetString(header) == "%PDF-";
+        var isPdf = bytesRead == 5
+            && System.Text.Encoding.ASCII.GetString(header) == "%PDF-";
 
         if (!isPdf)
         {
@@ -84,20 +103,20 @@ public class DocumentsController : ControllerBase
 
         inputStream.Position = 0;
 
-        var fileName = await _documentService.SaveDocumentAsync(
+        var originalFileName = Path.GetFileName(file.FileName);
+
+        var document = await _documentService.SaveDocumentAsync(
             inputStream,
+            originalFileName,
+            file.Length,
             cancellationToken);
 
         return Ok(new
         {
             Message = "PDF uploaded successfully!",
-            FileName = fileName,
-            OriginalFileName = Path.GetFileName(file.FileName),
-            SizeInBytes = file.Length
+            Document = document
         });
     }
-
-
 
     [HttpGet("{fileName}/text")]
     public async Task<IActionResult> GetPdfText(
@@ -123,8 +142,8 @@ public class DocumentsController : ControllerBase
 
     [HttpPost("{fileName}/embeddings")]
     public async Task<IActionResult> GenerateEmbeddings(
-    string fileName,
-    CancellationToken cancellationToken)
+        string fileName,
+        CancellationToken cancellationToken)
     {
         var embeddings = await _documentEmbeddingService.GenerateAsync(
             fileName,
@@ -134,15 +153,52 @@ public class DocumentsController : ControllerBase
         {
             FileName = fileName,
             ChunkCount = embeddings.Count,
-            EmbeddingDimensions = embeddings.FirstOrDefault()?.Vector.Count ?? 0
+            EmbeddingDimensions =
+                embeddings.FirstOrDefault()?.Vector.Count ?? 0
         });
+    }
+
+    [HttpPost("{fileName}/process")]
+    [ProducesResponseType(
+        typeof(DocumentSummary),
+        StatusCodes.Status200OK)]
+    public async Task<IActionResult> Process(
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var document = await _documentProcessingService.ProcessAsync(
+                fileName,
+                cancellationToken);
+
+            return Ok(document);
+        }
+        catch (FileNotFoundException exception)
+        {
+            return NotFound(exception.Message);
+        }
+    }
+
+    [HttpDelete("{fileName}")]
+    public async Task<IActionResult> Delete(
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        var deleted = await _documentDeletionService.DeleteAsync(
+            fileName,
+            cancellationToken);
+
+        return deleted
+            ? NoContent()
+            : NotFound("Document not found.");
     }
 
     [HttpPost("{fileName}/search")]
     public async Task<IActionResult> Search(
-    string fileName,
-    [FromBody] string question,
-    CancellationToken cancellationToken)
+        string fileName,
+        [FromBody] string question,
+        CancellationToken cancellationToken)
     {
         var results = await _documentSearchService.SearchAsync(
             fileName,
@@ -155,21 +211,25 @@ public class DocumentsController : ControllerBase
 
     [HttpPost("{fileName}/ask")]
     public async Task<IActionResult> Ask(
-    string fileName,
-    [FromBody] string question,
-    CancellationToken cancellationToken)
+        string fileName,
+        [FromBody] AskDocumentRequest request,
+        CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.Question))
+        {
+            return BadRequest("Question cannot be empty.");
+        }
+
         var answer = await _documentAnswerService.AskAsync(
             fileName,
-            question,
+            request.Question,
             cancellationToken);
 
         return Ok(new
         {
             FileName = fileName,
-            Question = question,
+            Question = request.Question,
             Answer = answer
         });
     }
-
 }

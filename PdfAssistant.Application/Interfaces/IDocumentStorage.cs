@@ -8,4 +8,6 @@ public interface IDocumentStorage
         CancellationToken cancellationToken = default);
 
     string? GetFilePath(string fileName);
+
+    bool Delete(string fileName);
 }

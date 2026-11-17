@@ -12,7 +12,20 @@ using PdfAssistant.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
+const string clientCorsPolicy = "ClientDevelopment";
+
 builder.Services.AddControllers();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(clientCorsPolicy, policy =>
+    {
+        policy
+            .WithOrigins("http://localhost:5173")
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
 
 var databasePath = Path.Combine(
     builder.Environment.ContentRootPath,
@@ -25,16 +38,19 @@ Directory.CreateDirectory(
 builder.Services.AddDbContext<PdfAssistantDbContext>(options =>
     options.UseSqlite($"Data Source={databasePath}"));
 
-builder.Services.AddScoped<IDocumentService, DocumentService>();
-builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
-
 builder.Services.Configure<OpenRouterOptions>(
     builder.Configuration.GetSection(OpenRouterOptions.SectionName));
 
 builder.Services.AddHttpClient<IEmbeddingService, OpenRouterEmbeddingService>();
 
-builder.Services.AddScoped<ITextChunker, TextChunker>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+builder.Services.AddScoped<
+    IDocumentProcessingService,
+    DocumentProcessingService>();
+builder.Services.AddScoped<
+    IDocumentDeletionService,
+    DocumentDeletionService>();
 builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
 builder.Services.AddScoped<ITextChunker, TextChunker>();
 builder.Services.AddScoped<IDocumentEmbeddingService, DocumentEmbeddingService>();
@@ -69,6 +85,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseCors(clientCorsPolicy);
 app.UseAuthorization();
 
 app.MapControllers();

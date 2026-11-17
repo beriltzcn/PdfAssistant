@@ -13,4 +13,7 @@ public interface IDocumentChunkRepository
     string fileName,
     CancellationToken cancellationToken = default);
 
+    Task DeleteByFileNameAsync(
+        string fileName,
+        CancellationToken cancellationToken = default);
 }

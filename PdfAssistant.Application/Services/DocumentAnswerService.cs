@@ -29,14 +29,14 @@ public class DocumentAnswerService : IDocumentAnswerService
 
         if (searchResults.Count == 0)
         {
-            return "Belgede sorunuzla ilgili bir içerik bulunamadı.";
+            return "I could not find any relevant information in this document.";
         }
 
         // 2. Bulunan metinleri tek bir context haline getir.
         var context = string.Join(
             "\n\n",
             searchResults.Select(result =>
-                $"Sayfa {result.Chunk.PageNumber}:\n{result.Chunk.Text}"));
+                $"Page {result.Chunk.PageNumber}:\n{result.Chunk.Text}"));
 
         // 3. Context ve soruyu AI modeline gönder.
         var answer = await _chatCompletionService.GenerateAnswerAsync(

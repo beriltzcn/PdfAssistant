@@ -4,7 +4,6 @@ using PdfAssistant.Application.Models;
 using PdfAssistant.Infrastructure.Data;
 using PdfAssistant.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
 
 namespace PdfAssistant.Infrastructure.Repositories;
 
@@ -22,6 +21,12 @@ public class DocumentChunkRepository : IDocumentChunkRepository
         IReadOnlyList<DocumentEmbedding> embeddings,
         CancellationToken cancellationToken = default)
     {
+        var existingEntities = await _dbContext.DocumentChunks
+            .Where(x => x.FileName == fileName)
+            .ToListAsync(cancellationToken);
+
+        _dbContext.DocumentChunks.RemoveRange(existingEntities);
+
         var entities = embeddings.Select(embedding =>
             new DocumentChunkEntity
             {
@@ -58,5 +63,14 @@ public class DocumentChunkRepository : IDocumentChunkRepository
             .ToList();
 
         return embeddings;
+    }
+
+    public async Task DeleteByFileNameAsync(
+        string fileName,
+        CancellationToken cancellationToken = default)
+    {
+        await _dbContext.DocumentChunks
+            .Where(x => x.FileName == fileName)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 }
