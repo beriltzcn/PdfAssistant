@@ -1,10 +1,13 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
 } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import './App.css'
 import {
   askDocument,
@@ -90,8 +93,14 @@ function getStatusLabel(status: string) {
 
 function App() {
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
+  const [selectedDocument, setSelectedDocument] =
+    useState<DocumentSummary | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [question, setQuestion] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
+  const [isAsking, setIsAsking] = useState(false)
   const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(
     null,
   )
@@ -104,11 +113,6 @@ function App() {
   const [apiStatus, setApiStatus] = useState<ApiStatus>('connecting')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [selectedDocument, setSelectedDocument] =
-    useState<DocumentSummary | null>(null)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [question, setQuestion] = useState('')
-  const [isAsking, setIsAsking] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -120,6 +124,7 @@ function App() {
       .then((items) => {
         if (!ignore) {
           setDocuments(items)
+          setSelectedDocument(findPreferredDocument(items))
           setApiStatus('connected')
           setError(null)
         }
@@ -154,10 +159,55 @@ function App() {
     (total, document) => total + document.pageCount,
     0,
   )
+  const readyCount = documents.filter(
+    (document) => document.status === 'ready',
+  ).length
+  const filteredDocuments = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+
+    if (!query) {
+      return documents
+    }
+
+    return documents.filter((document) =>
+      document.originalFileName.toLowerCase().includes(query),
+    )
+  }, [documents, searchQuery])
+
+  function resetConversation() {
+    setMessages([])
+    setQuestion('')
+    setChatError(null)
+  }
+
+  function selectDocument(document: DocumentSummary) {
+    if (isAsking || selectedDocument?.id === document.id) {
+      return
+    }
+
+    setSelectedDocument(document)
+    resetConversation()
+    setError(null)
+    setNotice(null)
+    setConfirmingDeleteId(null)
+  }
 
   async function refreshDocuments() {
     const items = await getDocuments()
     setDocuments(items)
+    setSelectedDocument((currentDocument) => {
+      if (currentDocument) {
+        const updatedDocument = items.find(
+          (document) => document.id === currentDocument.id,
+        )
+
+        if (updatedDocument) {
+          return updatedDocument
+        }
+      }
+
+      return findPreferredDocument(items)
+    })
     setApiStatus('connected')
   }
 
@@ -196,6 +246,8 @@ function App() {
           (document) => document.id !== response.document.id,
         ),
       ])
+      setSelectedDocument(response.document)
+      resetConversation()
       setApiStatus('connected')
       setNotice(
         `${response.document.originalFileName} uploaded. Preparing it for chat…`,
@@ -212,6 +264,7 @@ function App() {
             : document,
         ),
       )
+      setSelectedDocument(processedDocument)
       setNotice(
         `${processedDocument.originalFileName} is ready for chat.`,
       )
@@ -219,7 +272,7 @@ function App() {
       try {
         await refreshDocuments()
       } catch {
-        // The optimistic update keeps the uploaded document visible.
+        // Keep the optimistic ready state visible.
       }
     } catch (requestError: unknown) {
       const message = getApiErrorMessage(requestError)
@@ -234,7 +287,7 @@ function App() {
         try {
           await refreshDocuments()
         } catch {
-          // Keep the uploaded document visible with its optimistic state.
+          // Keep the uploaded document available for a retry.
         }
       }
     } finally {
@@ -256,34 +309,81 @@ function App() {
     }
   }
 
-  function openChat(document: DocumentSummary) {
-    if (document.status !== 'ready') {
-      return
-    }
-
-    setSelectedDocument(document)
-    setMessages([])
-    setQuestion('')
-    setChatError(null)
+  async function handleReprocess(document: DocumentSummary) {
+    setRetryingDocumentId(document.id)
     setError(null)
-    setNotice(null)
+    setNotice(`Reprocessing ${document.originalFileName}…`)
+
+    try {
+      const processedDocument = await processDocument(
+        document.storedFileName,
+      )
+
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((currentDocument) =>
+          currentDocument.id === processedDocument.id
+            ? processedDocument
+            : currentDocument,
+        ),
+      )
+      setSelectedDocument(processedDocument)
+      setNotice(
+        `${processedDocument.originalFileName} is ready for chat.`,
+      )
+
+      try {
+        await refreshDocuments()
+      } catch {
+        // Keep the updated document visible with its optimistic state.
+      }
+    } catch (requestError: unknown) {
+      setError(getApiErrorMessage(requestError))
+
+      try {
+        await refreshDocuments()
+      } catch {
+        // Keep the failed row available for another retry.
+      }
+    } finally {
+      setRetryingDocumentId(null)
+    }
   }
 
-  function closeChat() {
-    if (isAsking) {
-      return
-    }
+  async function handleDelete(document: DocumentSummary) {
+    setDeletingDocumentId(document.id)
+    setError(null)
 
-    setSelectedDocument(null)
-    setMessages([])
-    setQuestion('')
-    setChatError(null)
+    try {
+      await deleteDocument(document.storedFileName)
+
+      const remainingDocuments = documents.filter(
+        (currentDocument) => currentDocument.id !== document.id,
+      )
+
+      setDocuments(remainingDocuments)
+      setNotice(`${document.originalFileName} deleted.`)
+      setConfirmingDeleteId(null)
+
+      if (selectedDocument?.id === document.id) {
+        setSelectedDocument(findPreferredDocument(remainingDocuments))
+        resetConversation()
+      }
+    } catch (requestError: unknown) {
+      setError(getApiErrorMessage(requestError))
+      setConfirmingDeleteId(null)
+    } finally {
+      setDeletingDocumentId(null)
+    }
   }
 
   async function handleAsk(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!selectedDocument || isAsking) {
+    if (
+      !selectedDocument ||
+      selectedDocument.status !== 'ready' ||
+      isAsking
+    ) {
       return
     }
 
@@ -326,446 +426,438 @@ function App() {
     }
   }
 
-  async function handleReprocess(document: DocumentSummary) {
-    setRetryingDocumentId(document.id)
-    setError(null)
-    setNotice(`Reprocessing ${document.originalFileName}…`)
-
-    try {
-      const processedDocument = await processDocument(
-        document.storedFileName,
-      )
-
-      setDocuments((currentDocuments) =>
-        currentDocuments.map((currentDocument) =>
-          currentDocument.id === processedDocument.id
-            ? processedDocument
-            : currentDocument,
-        ),
-      )
-      setNotice(
-        `${processedDocument.originalFileName} is ready for chat.`,
-      )
-
-      try {
-        await refreshDocuments()
-      } catch {
-        // Keep the updated document visible with its optimistic state.
-      }
-    } catch (requestError: unknown) {
-      setError(getApiErrorMessage(requestError))
-
-      try {
-        await refreshDocuments()
-      } catch {
-        // Keep the existing row available for another retry.
-      }
-    } finally {
-      setRetryingDocumentId(null)
-    }
-  }
-
-  async function handleDelete(document: DocumentSummary) {
-    setDeletingDocumentId(document.id)
-    setError(null)
-
-    try {
-      await deleteDocument(document.storedFileName)
-      setDocuments((currentDocuments) =>
-        currentDocuments.filter(
-          (currentDocument) => currentDocument.id !== document.id,
-        ),
-      )
-      setNotice(`${document.originalFileName} deleted.`)
-      setConfirmingDeleteId(null)
-    } catch (requestError: unknown) {
-      setError(getApiErrorMessage(requestError))
-      setConfirmingDeleteId(null)
-    } finally {
-      setDeletingDocumentId(null)
-    }
-  }
-
   return (
     <div className="app-shell">
-      <header className="site-header">
-        <div className="header-inner">
-          <a className="brand" href="#top" aria-label="PdfAssistant home">
-            <span className="brand-mark" aria-hidden="true">
-              P
-            </span>
-            <span>PdfAssistant</span>
-          </a>
+      <header className="app-header">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            P
+          </span>
+          <strong>PdfAssistant</strong>
+        </div>
 
-          <nav className="main-nav" aria-label="Main navigation">
-            <a className="active" href="#documents" aria-current="page">
-              Documents
-            </a>
-          </nav>
+        <nav className="main-nav" aria-label="Main navigation">
+          <span className="active">Documents</span>
+        </nav>
 
-          <div className="header-actions">
-            <div className="api-state">
-              <span
-                className={`status-dot ${apiStatus}`}
-                aria-hidden="true"
-              />
-              <span>
-                {apiStatus === 'connected' && 'Connected'}
-                {apiStatus === 'connecting' && 'Connecting'}
-                {apiStatus === 'disconnected' && 'Disconnected'}
-              </span>
-            </div>
-
-          </div>
+        <div className="header-status">
+          <span
+            className={`status-dot ${apiStatus}`}
+            aria-hidden="true"
+          />
+          <span>
+            {apiStatus === 'connected' && 'API connected'}
+            {apiStatus === 'connecting' && 'Connecting'}
+            {apiStatus === 'disconnected' && 'Disconnected'}
+          </span>
         </div>
       </header>
 
-      <main className="page" id="top">
-        <section className="page-header">
-          <div>
-            <p className="eyebrow">
-              {selectedDocument ? 'PDF CHAT' : 'PERSONAL LIBRARY'}
-            </p>
-            <h1>
-              {selectedDocument ? 'Ask your document' : 'Documents'}
-            </h1>
-            <p className="page-description">
-              {selectedDocument
-                ? selectedDocument.originalFileName
-                : 'Upload your PDF files and keep them in one place.'}
-            </p>
-          </div>
-
-          {!selectedDocument && (
-            <div className="upload-controls">
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-              >
-                {isUploading ? 'Uploading…' : '+ Upload PDF'}
-              </button>
-              <span>Up to 10 MB</span>
+      <div className="workspace">
+        <aside className="library" aria-label="Document library">
+          <div className="library-heading">
+            <div>
+              <p>LIBRARY</p>
+              <h1>
+                Documents <span>{documents.length}</span>
+              </h1>
             </div>
-          )}
-
-          <input
-            ref={fileInputRef}
-            className="file-input"
-            type="file"
-            accept=".pdf,application/pdf"
-            onChange={handleFileChange}
-            tabIndex={-1}
-            aria-label="Choose a PDF file to upload"
-          />
-        </section>
-
-        <section
-          className="summary-bar"
-          aria-label="Document summary"
-          hidden={Boolean(selectedDocument)}
-        >
-          <div>
-            <strong>{documents.length}</strong>
-            <span>Documents</span>
-          </div>
-          <div>
-            <strong>{totalPages}</strong>
-            <span>Pages</span>
-          </div>
-          <div>
-            <strong>
-              {
-                documents.filter(
-                  (document) => document.status === 'ready',
-                ).length
-              }
-            </strong>
-            <span>Processed</span>
-          </div>
-        </section>
-
-        {!selectedDocument && error && (
-          <div className="feedback-message error-message" role="alert">
-            <span>{error}</span>
             <button
+              className="icon-button"
               type="button"
-              onClick={() => {
-                if (apiStatus === 'disconnected') {
-                  void handleRetry()
-                  return
-                }
-
-                setError(null)
-              }}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              aria-label="Upload PDF"
             >
-              {apiStatus === 'disconnected' ? 'Try again' : 'Dismiss'}
+              +
             </button>
           </div>
-        )}
 
-        {!selectedDocument && notice && (
-          <div className="feedback-message success-message" role="status">
-            <span>{notice}</span>
-          </div>
-        )}
+          <button
+            className="upload-button"
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+          >
+            {isUploading ? 'Preparing PDF…' : '+ Upload PDF'}
+          </button>
 
-        <section
-          className="documents-section"
-          id="documents"
-          aria-labelledby="documents-title"
-          hidden={Boolean(selectedDocument)}
-        >
-          <div className="section-heading">
-            <div>
-              <h2 id="documents-title">All documents</h2>
-              <p>Your uploaded PDF files appear here.</p>
-            </div>
+          <label className="library-search">
+            <span aria-hidden="true">⌕</span>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search documents"
+            />
+          </label>
 
-            {!isLoading && documents.length > 0 && (
-              <span className="file-count">
-                {documents.length} {documents.length === 1 ? 'file' : 'files'}
-              </span>
-            )}
-          </div>
-
-          {isLoading ? (
-            <div className="document-state" role="status">
-              <span className="loading-spinner" aria-hidden="true" />
-              Loading documents…
-            </div>
-          ) : documents.length > 0 ? (
-            <div className="document-list" role="list">
-              {documents.map((document) => {
-                const isDeleting = deletingDocumentId === document.id
-                const isRetrying = retryingDocumentId === document.id
-                const isBusy = isDeleting || isRetrying
+          <div className="library-list">
+            {isLoading ? (
+              <div className="library-state">
+                <span className="loading-spinner" aria-hidden="true" />
+                Loading documents…
+              </div>
+            ) : filteredDocuments.length > 0 ? (
+              filteredDocuments.map((document) => {
+                const isSelected = selectedDocument?.id === document.id
 
                 return (
-                  <article
-                    className="document-row"
+                  <button
+                    className={`library-document ${
+                      isSelected ? 'selected' : ''
+                    }`}
+                    type="button"
                     key={document.id}
-                    role="listitem"
+                    onClick={() => selectDocument(document)}
+                    disabled={isAsking}
+                    aria-pressed={isSelected}
                   >
-                    <div className="file-type" aria-hidden="true">
+                    <span className="file-icon" aria-hidden="true">
                       PDF
-                    </div>
-
-                    <div className="document-copy">
-                      <h3 title={document.originalFileName}>
+                    </span>
+                    <span className="library-document-copy">
+                      <strong title={document.originalFileName}>
                         {document.originalFileName}
-                      </h3>
-                      <p>
-                        {formatDocumentDate(document.createdAtUtc)}
-                        <span aria-hidden="true"> · </span>
-                        {formatFileSize(document.sizeInBytes)}
-                        <span aria-hidden="true"> · </span>
+                      </strong>
+                      <small>
                         {document.pageCount > 0
                           ? `${document.pageCount} pages`
                           : 'Page count pending'}
-                      </p>
-                    </div>
-
-                    <span className="document-status">
+                        <span aria-hidden="true"> · </span>
+                        {formatDocumentDate(document.createdAtUtc)}
+                      </small>
+                    </span>
+                    <span
+                      className={`small-status ${document.status}`}
+                    >
                       {getStatusLabel(document.status)}
                     </span>
-
-                    <div className="document-actions">
-                      {confirmingDeleteId === document.id ? (
-                        <>
-                          <span className="delete-confirm-label">
-                            Delete this PDF?
-                          </span>
-                          <button
-                            className="document-action danger"
-                            type="button"
-                            onClick={() => void handleDelete(document)}
-                            disabled={isDeleting}
-                          >
-                            {isDeleting ? 'Deleting…' : 'Confirm'}
-                          </button>
-                          <button
-                            className="document-action muted"
-                            type="button"
-                            onClick={() => setConfirmingDeleteId(null)}
-                            disabled={isDeleting}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          {document.status === 'ready' && (
-                            <button
-                              className="document-action"
-                              type="button"
-                              onClick={() => openChat(document)}
-                              disabled={isBusy}
-                            >
-                              Chat
-                            </button>
-                          )}
-
-                          {document.status === 'failed' && (
-                            <button
-                              className="document-action"
-                              type="button"
-                              onClick={() => void handleReprocess(document)}
-                              disabled={isBusy}
-                            >
-                              {isRetrying ? 'Retrying…' : 'Retry'}
-                            </button>
-                          )}
-
-                          <button
-                            className="document-action danger"
-                            type="button"
-                            onClick={() =>
-                              setConfirmingDeleteId(document.id)
-                            }
-                            disabled={isBusy}
-                          >
-                            Delete
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </article>
+                  </button>
                 )
-              })}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <span className="empty-symbol" aria-hidden="true">
-                +
-              </span>
-              <h3>No documents yet</h3>
-              <p>Upload your first PDF to start your library.</p>
+              })
+            ) : (
+              <div className="library-state">
+                {searchQuery
+                  ? 'No matching documents.'
+                  : 'No documents yet.'}
+              </div>
+            )}
+          </div>
+
+          <div className="library-footer">
+            <span>
+              <strong>{readyCount}</strong> ready
+            </span>
+            <span>
+              <strong>{totalPages}</strong> pages
+            </span>
+          </div>
+        </aside>
+
+        <main className="main-panel">
+          {error && (
+            <div className="feedback-message error-message" role="alert">
+              <span>{error}</span>
               <button
-                className="text-button"
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
+                onClick={() => {
+                  if (apiStatus === 'disconnected') {
+                    void handleRetry()
+                    return
+                  }
+
+                  setError(null)
+                }}
               >
-                Choose PDF
+                {apiStatus === 'disconnected' ? 'Try again' : 'Dismiss'}
               </button>
             </div>
           )}
-        </section>
 
-        {selectedDocument && (
-          <section
-            className="chat-section"
-            aria-labelledby="chat-title"
-          >
-            <div className="chat-toolbar">
-              <button
-                className="back-button"
-                type="button"
-                onClick={closeChat}
-                disabled={isAsking}
-              >
-                ← All documents
-              </button>
-              <span className="document-status">
-                {getStatusLabel(selectedDocument.status)}
-              </span>
+          {notice && (
+            <div className="feedback-message success-message" role="status">
+              <span>{notice}</span>
             </div>
+          )}
 
-            <div className="chat-heading">
-              <h2 id="chat-title">Ask this PDF</h2>
-              <p>
-                {selectedDocument.pageCount > 0
-                  ? `${selectedDocument.pageCount} pages`
-                  : 'Document ready'}
-                <span aria-hidden="true"> · </span>
-                Answers are based only on this document.
-              </p>
-            </div>
+          {selectedDocument ? (
+            <section
+              className="active-document"
+              aria-labelledby="active-document-title"
+            >
+              <header className="document-header">
+                <div className="document-heading">
+                  <p>ACTIVE DOCUMENT</p>
+                  <h2 id="active-document-title">
+                    {selectedDocument.originalFileName}
+                  </h2>
+                  <span>
+                    {selectedDocument.pageCount > 0
+                      ? `${selectedDocument.pageCount} pages`
+                      : 'Page count pending'}
+                    <span aria-hidden="true"> · </span>
+                    {formatFileSize(selectedDocument.sizeInBytes)}
+                    <span aria-hidden="true"> · </span>
+                    {getStatusLabel(selectedDocument.status)}
+                  </span>
+                </div>
 
-            <div className="chat-thread" aria-live="polite">
-              {messages.length === 0 && !isAsking && (
-                <div className="chat-empty">
-                  <strong>What would you like to know?</strong>
-                  <p>
-                    Ask a question or start with one of the suggestions.
-                  </p>
-                  <div className="chat-suggestions">
-                    {suggestedQuestions.map((suggestion) => (
+                <div className="document-actions">
+                  {confirmingDeleteId === selectedDocument.id ? (
+                    <>
+                      <span className="delete-prompt">Delete this PDF?</span>
+                      <button
+                        className="text-action danger"
+                        type="button"
+                        onClick={() => void handleDelete(selectedDocument)}
+                        disabled={deletingDocumentId === selectedDocument.id}
+                      >
+                        {deletingDocumentId === selectedDocument.id
+                          ? 'Deleting…'
+                          : 'Confirm'}
+                      </button>
+                      <button
+                        className="text-action"
+                        type="button"
+                        onClick={() => setConfirmingDeleteId(null)}
+                        disabled={deletingDocumentId === selectedDocument.id}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {selectedDocument.status === 'failed' && (
+                        <button
+                          className="text-action"
+                          type="button"
+                          onClick={() =>
+                            void handleReprocess(selectedDocument)
+                          }
+                          disabled={
+                            retryingDocumentId === selectedDocument.id ||
+                            isAsking
+                          }
+                        >
+                          {retryingDocumentId === selectedDocument.id
+                            ? 'Retrying…'
+                            : 'Retry'}
+                        </button>
+                      )}
+                      <button
+                        className="text-action danger"
+                        type="button"
+                        onClick={() =>
+                          setConfirmingDeleteId(selectedDocument.id)
+                        }
+                        disabled={
+                          isAsking ||
+                          retryingDocumentId === selectedDocument.id
+                        }
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </header>
+
+              {selectedDocument.status === 'ready' ? (
+                <>
+                  <div className="chat-thread" aria-live="polite">
+                    {messages.length === 0 && !isAsking && (
+                      <div className="chat-empty">
+                        <span className="assistant-mark" aria-hidden="true">
+                          P
+                        </span>
+                        <div>
+                          <h3>Ready when you are.</h3>
+                          <p>
+                            Ask a question and get an answer grounded in this
+                            document.
+                          </p>
+                        </div>
+                        <div className="chat-suggestions">
+                          {suggestedQuestions.map((suggestion) => (
+                            <button
+                              type="button"
+                              key={suggestion}
+                              onClick={() => setQuestion(suggestion)}
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {messages.map((message) => (
+                      <div
+                        className={`chat-message ${message.role}`}
+                        key={message.id}
+                      >
+                        <span>
+                          {message.role === 'user'
+                            ? 'You'
+                            : 'PdfAssistant'}
+                        </span>
+                        <div
+                          className={`message-bubble ${
+                            message.role === 'assistant'
+                              ? 'markdown-content'
+                              : ''
+                          }`}
+                        >
+                          {message.role === 'assistant' ? (
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
+                          ) : (
+                            <p>{message.content}</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {isAsking && (
+                      <div className="chat-thinking" role="status">
+                        <span
+                          className="loading-spinner"
+                          aria-hidden="true"
+                        />
+                        Searching the document…
+                      </div>
+                    )}
+
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  {chatError && (
+                    <div
+                      className="feedback-message error-message chat-error"
+                      role="alert"
+                    >
+                      <span>{chatError}</span>
                       <button
                         type="button"
-                        key={suggestion}
-                        onClick={() => setQuestion(suggestion)}
+                        onClick={() => setChatError(null)}
                       >
-                        {suggestion}
+                        Dismiss
                       </button>
-                    ))}
-                  </div>
+                    </div>
+                  )}
+
+                  <form className="chat-composer" onSubmit={handleAsk}>
+                    <label htmlFor="document-question">
+                      Ask this document
+                    </label>
+                    <div className="composer-row">
+                      <input
+                        id="document-question"
+                        type="text"
+                        value={question}
+                        onChange={(event) => setQuestion(event.target.value)}
+                        placeholder="Type your question…"
+                        autoComplete="off"
+                        disabled={isAsking}
+                      />
+                      <button
+                        className="send-button"
+                        type="submit"
+                        disabled={isAsking || !question.trim()}
+                        aria-label="Ask question"
+                      >
+                        {isAsking ? 'Asking…' : 'Ask'}
+                      </button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <div className="document-gate">
+                  {selectedDocument.status === 'processing' ? (
+                    <>
+                      <span
+                        className="loading-spinner"
+                        aria-hidden="true"
+                      />
+                      <h3>Preparing this document</h3>
+                      <p>Text and embeddings are being prepared for chat.</p>
+                    </>
+                  ) : (
+                    <>
+                      <span className="gate-symbol" aria-hidden="true">
+                        !
+                      </span>
+                      <h3>Processing failed</h3>
+                      <p>Retry to prepare this PDF for chat again.</p>
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={() => void handleReprocess(selectedDocument)}
+                        disabled={
+                          retryingDocumentId === selectedDocument.id
+                        }
+                      >
+                        {retryingDocumentId === selectedDocument.id
+                          ? 'Retrying…'
+                          : 'Retry processing'}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
-
-              {messages.map((message) => (
-                <div
-                  className={`chat-message ${message.role}`}
-                  key={message.id}
-                >
-                  <span className="chat-author">
-                    {message.role === 'user' ? 'You' : 'PdfAssistant'}
-                  </span>
-                  <p>{message.content}</p>
-                </div>
-              ))}
-
-              {isAsking && (
-                <div className="chat-thinking" role="status">
-                  <span className="loading-spinner" aria-hidden="true" />
-                  Searching the document…
-                </div>
-              )}
-
-              <div ref={chatEndRef} />
-            </div>
-
-            {chatError && (
-              <div className="feedback-message error-message" role="alert">
-                <span>{chatError}</span>
-                <button type="button" onClick={() => setChatError(null)}>
-                  Dismiss
-                </button>
-              </div>
-            )}
-
-            <form className="chat-composer" onSubmit={handleAsk}>
-              <label htmlFor="document-question">Your question</label>
-              <div className="chat-input-row">
-                <input
-                  id="document-question"
-                  type="text"
-                  value={question}
-                  onChange={(event) => setQuestion(event.target.value)}
-                  placeholder="Ask something about this PDF…"
-                  autoComplete="off"
-                  disabled={isAsking}
-                />
+            </section>
+          ) : (
+            <div className="main-empty">
+              <span className="empty-symbol" aria-hidden="true">
+                PDF
+              </span>
+              <h2>
+                {documents.length === 0
+                  ? 'Your library is empty'
+                  : 'Select a document'}
+              </h2>
+              <p>
+                {documents.length === 0
+                  ? 'Upload your first PDF to start a conversation.'
+                  : 'Choose a PDF from the library to continue.'}
+              </p>
+              {documents.length === 0 && (
                 <button
                   className="primary-button"
-                  type="submit"
-                  disabled={isAsking || !question.trim()}
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
                 >
-                  {isAsking ? 'Asking…' : 'Ask'}
+                  Upload your first PDF
                 </button>
-              </div>
-            </form>
-          </section>
-        )}
+              )}
+            </div>
+          )}
+        </main>
+      </div>
 
-        <footer className="page-note">
-          <strong>PdfAssistant</strong>
-          <span>Your documents are stored only in this workspace.</span>
-        </footer>
-      </main>
+      <input
+        ref={fileInputRef}
+        className="file-input"
+        type="file"
+        accept=".pdf,application/pdf"
+        onChange={handleFileChange}
+        tabIndex={-1}
+        aria-label="Choose a PDF file to upload"
+      />
     </div>
+  )
+}
+
+function findPreferredDocument(documents: DocumentSummary[]) {
+  return (
+    documents.find((document) => document.status === 'ready') ??
+    documents[0] ??
+    null
   )
 }
 

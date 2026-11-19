@@ -49,6 +49,12 @@ public class OpenRouterChatCompletionService : IChatCompletionService
                         If the answer is not in the context, say that
                         the document does not contain this information.
                         Answer in the same language as the user's question.
+                        Keep the answer concise and easy to scan.
+                        Use short paragraphs and bullet lists when useful.
+                        Bold only important terms.
+                        Cite page numbers inline as (Page 4).
+                        Do not wrap the whole answer in quotation marks.
+                        Quote exact document text only when it is necessary.
                         """
                 },
                 new()
