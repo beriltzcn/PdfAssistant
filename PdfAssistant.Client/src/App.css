@@ -309,7 +309,7 @@
 .document-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: 42px minmax(0, 1fr) 88px 104px;
+  grid-template-columns: 42px minmax(0, 1fr) 88px 184px;
   align-items: center;
   gap: 18px;
   min-height: 82px;
@@ -366,7 +366,6 @@
 }
 
 .document-action {
-  justify-self: end;
   padding: 0;
   color: #a0a6a1;
   font-size: 10px;
@@ -374,6 +373,15 @@
   border: 0;
   background: transparent;
   cursor: not-allowed;
+}
+
+.document-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 9px;
 }
 
 .document-action:not(:disabled) {
@@ -385,6 +393,23 @@
   color: var(--accent-hover);
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.document-action.danger:not(:disabled) {
+  color: #a3483e;
+}
+
+.document-action.danger:not(:disabled):hover {
+  color: #83362e;
+}
+
+.document-action.muted:not(:disabled) {
+  color: #858c87;
+}
+
+.delete-confirm-label {
+  color: #737b76;
+  font-size: 9px;
 }
 
 .document-state {
@@ -752,11 +777,10 @@
     gap: 13px;
   }
 
-  .document-action {
-    display: inline-flex;
+  .document-actions {
     grid-row: 2;
     grid-column: 2 / 4;
-    justify-self: start;
+    justify-content: flex-start;
     margin-top: -4px;
   }
 

@@ -54,6 +54,12 @@ export async function processDocument(
   return response.data
 }
 
+export async function deleteDocument(storedFileName: string): Promise<void> {
+  await api.delete(
+    `/api/Documents/${encodeURIComponent(storedFileName)}`,
+  )
+}
+
 export async function askDocument(
   storedFileName: string,
   question: string,

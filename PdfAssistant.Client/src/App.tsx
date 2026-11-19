@@ -8,6 +8,7 @@ import {
 import './App.css'
 import {
   askDocument,
+  deleteDocument,
   getApiErrorMessage,
   getDocuments,
   processDocument,
@@ -91,6 +92,15 @@ function App() {
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
+  const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(
+    null,
+  )
+  const [retryingDocumentId, setRetryingDocumentId] = useState<number | null>(
+    null,
+  )
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(
+    null,
+  )
   const [apiStatus, setApiStatus] = useState<ApiStatus>('connecting')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -316,6 +326,66 @@ function App() {
     }
   }
 
+  async function handleReprocess(document: DocumentSummary) {
+    setRetryingDocumentId(document.id)
+    setError(null)
+    setNotice(`Reprocessing ${document.originalFileName}…`)
+
+    try {
+      const processedDocument = await processDocument(
+        document.storedFileName,
+      )
+
+      setDocuments((currentDocuments) =>
+        currentDocuments.map((currentDocument) =>
+          currentDocument.id === processedDocument.id
+            ? processedDocument
+            : currentDocument,
+        ),
+      )
+      setNotice(
+        `${processedDocument.originalFileName} is ready for chat.`,
+      )
+
+      try {
+        await refreshDocuments()
+      } catch {
+        // Keep the updated document visible with its optimistic state.
+      }
+    } catch (requestError: unknown) {
+      setError(getApiErrorMessage(requestError))
+
+      try {
+        await refreshDocuments()
+      } catch {
+        // Keep the existing row available for another retry.
+      }
+    } finally {
+      setRetryingDocumentId(null)
+    }
+  }
+
+  async function handleDelete(document: DocumentSummary) {
+    setDeletingDocumentId(document.id)
+    setError(null)
+
+    try {
+      await deleteDocument(document.storedFileName)
+      setDocuments((currentDocuments) =>
+        currentDocuments.filter(
+          (currentDocument) => currentDocument.id !== document.id,
+        ),
+      )
+      setNotice(`${document.originalFileName} deleted.`)
+      setConfirmingDeleteId(null)
+    } catch (requestError: unknown) {
+      setError(getApiErrorMessage(requestError))
+      setConfirmingDeleteId(null)
+    } finally {
+      setDeletingDocumentId(null)
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -467,50 +537,103 @@ function App() {
             </div>
           ) : documents.length > 0 ? (
             <div className="document-list" role="list">
-              {documents.map((document) => (
-                <article
-                  className="document-row"
-                  key={document.id}
-                  role="listitem"
-                >
-                  <div className="file-type" aria-hidden="true">
-                    PDF
-                  </div>
+              {documents.map((document) => {
+                const isDeleting = deletingDocumentId === document.id
+                const isRetrying = retryingDocumentId === document.id
+                const isBusy = isDeleting || isRetrying
 
-                  <div className="document-copy">
-                    <h3 title={document.originalFileName}>
-                      {document.originalFileName}
-                    </h3>
-                    <p>
-                      {formatDocumentDate(document.createdAtUtc)}
-                      <span aria-hidden="true"> · </span>
-                      {formatFileSize(document.sizeInBytes)}
-                      <span aria-hidden="true"> · </span>
-                      {document.pageCount > 0
-                        ? `${document.pageCount} pages`
-                        : 'Page count pending'}
-                    </p>
-                  </div>
-
-                  <span className="document-status">
-                    {getStatusLabel(document.status)}
-                  </span>
-
-                  <button
-                    className="document-action"
-                    type="button"
-                    onClick={() => openChat(document)}
-                    disabled={document.status !== 'ready'}
-                    title={
-                      document.status === 'ready'
-                        ? 'Chat with this PDF'
-                        : 'Chat becomes available when processing is complete'
-                    }
+                return (
+                  <article
+                    className="document-row"
+                    key={document.id}
+                    role="listitem"
                   >
-                    {document.status === 'ready' ? 'Chat' : 'Chat soon'}
-                  </button>
-                </article>
-              ))}
+                    <div className="file-type" aria-hidden="true">
+                      PDF
+                    </div>
+
+                    <div className="document-copy">
+                      <h3 title={document.originalFileName}>
+                        {document.originalFileName}
+                      </h3>
+                      <p>
+                        {formatDocumentDate(document.createdAtUtc)}
+                        <span aria-hidden="true"> · </span>
+                        {formatFileSize(document.sizeInBytes)}
+                        <span aria-hidden="true"> · </span>
+                        {document.pageCount > 0
+                          ? `${document.pageCount} pages`
+                          : 'Page count pending'}
+                      </p>
+                    </div>
+
+                    <span className="document-status">
+                      {getStatusLabel(document.status)}
+                    </span>
+
+                    <div className="document-actions">
+                      {confirmingDeleteId === document.id ? (
+                        <>
+                          <span className="delete-confirm-label">
+                            Delete this PDF?
+                          </span>
+                          <button
+                            className="document-action danger"
+                            type="button"
+                            onClick={() => void handleDelete(document)}
+                            disabled={isDeleting}
+                          >
+                            {isDeleting ? 'Deleting…' : 'Confirm'}
+                          </button>
+                          <button
+                            className="document-action muted"
+                            type="button"
+                            onClick={() => setConfirmingDeleteId(null)}
+                            disabled={isDeleting}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {document.status === 'ready' && (
+                            <button
+                              className="document-action"
+                              type="button"
+                              onClick={() => openChat(document)}
+                              disabled={isBusy}
+                            >
+                              Chat
+                            </button>
+                          )}
+
+                          {document.status === 'failed' && (
+                            <button
+                              className="document-action"
+                              type="button"
+                              onClick={() => void handleReprocess(document)}
+                              disabled={isBusy}
+                            >
+                              {isRetrying ? 'Retrying…' : 'Retry'}
+                            </button>
+                          )}
+
+                          <button
+                            className="document-action danger"
+                            type="button"
+                            onClick={() =>
+                              setConfirmingDeleteId(document.id)
+                            }
+                            disabled={isBusy}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
             </div>
           ) : (
             <div className="empty-state">
