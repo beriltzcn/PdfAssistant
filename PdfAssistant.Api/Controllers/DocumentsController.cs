@@ -12,26 +12,17 @@ public class DocumentsController : ControllerBase
     private const long MaxFileSize = 10 * 1024 * 1024;
 
     private readonly IDocumentService _documentService;
-    private readonly IDocumentEmbeddingService _documentEmbeddingService;
-    private readonly IDocumentSearchService _documentSearchService;
     private readonly IDocumentAnswerService _documentAnswerService;
     private readonly IDocumentProcessingService _documentProcessingService;
-    private readonly IDocumentDeletionService _documentDeletionService;
 
     public DocumentsController(
         IDocumentService documentService,
-        IDocumentEmbeddingService documentEmbeddingService,
-        IDocumentSearchService documentSearchService,
         IDocumentAnswerService documentAnswerService,
-        IDocumentProcessingService documentProcessingService,
-        IDocumentDeletionService documentDeletionService)
+        IDocumentProcessingService documentProcessingService)
     {
         _documentService = documentService;
-        _documentEmbeddingService = documentEmbeddingService;
-        _documentSearchService = documentSearchService;
         _documentAnswerService = documentAnswerService;
         _documentProcessingService = documentProcessingService;
-        _documentDeletionService = documentDeletionService;
     }
 
     [HttpGet]
@@ -45,15 +36,6 @@ public class DocumentsController : ControllerBase
             cancellationToken);
 
         return Ok(documents);
-    }
-
-    [HttpGet("health")]
-    public IActionResult Health()
-    {
-        return Ok(new
-        {
-            Message = "PDF Assistant API is working!"
-        });
     }
 
     [HttpPost("upload")]
@@ -118,46 +100,6 @@ public class DocumentsController : ControllerBase
         });
     }
 
-    [HttpGet("{fileName}/text")]
-    public async Task<IActionResult> GetPdfText(
-        string fileName,
-        CancellationToken cancellationToken)
-    {
-        var pages = await _documentService.ExtractTextAsync(
-            fileName,
-            cancellationToken);
-
-        if (pages is null)
-        {
-            return NotFound("PDF file not found.");
-        }
-
-        return Ok(new
-        {
-            FileName = fileName,
-            PageCount = pages.Count,
-            Pages = pages
-        });
-    }
-
-    [HttpPost("{fileName}/embeddings")]
-    public async Task<IActionResult> GenerateEmbeddings(
-        string fileName,
-        CancellationToken cancellationToken)
-    {
-        var embeddings = await _documentEmbeddingService.GenerateAsync(
-            fileName,
-            cancellationToken);
-
-        return Ok(new
-        {
-            FileName = fileName,
-            ChunkCount = embeddings.Count,
-            EmbeddingDimensions =
-                embeddings.FirstOrDefault()?.Vector.Count ?? 0
-        });
-    }
-
     [HttpPost("{fileName}/process")]
     [ProducesResponseType(
         typeof(DocumentSummary),
@@ -185,28 +127,13 @@ public class DocumentsController : ControllerBase
         string fileName,
         CancellationToken cancellationToken)
     {
-        var deleted = await _documentDeletionService.DeleteAsync(
+        var deleted = await _documentService.DeleteAsync(
             fileName,
             cancellationToken);
 
         return deleted
             ? NoContent()
             : NotFound("Document not found.");
-    }
-
-    [HttpPost("{fileName}/search")]
-    public async Task<IActionResult> Search(
-        string fileName,
-        [FromBody] string question,
-        CancellationToken cancellationToken)
-    {
-        var results = await _documentSearchService.SearchAsync(
-            fileName,
-            question,
-            topK: 5,
-            cancellationToken);
-
-        return Ok(results);
     }
 
     [HttpPost("{fileName}/ask")]

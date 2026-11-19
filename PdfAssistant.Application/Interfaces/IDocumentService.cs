@@ -16,4 +16,8 @@ public interface IDocumentService
     Task<IReadOnlyList<PdfPageText>?> ExtractTextAsync(
         string fileName,
         CancellationToken cancellationToken = default);
+
+    Task<bool> DeleteAsync(
+        string storedFileName,
+        CancellationToken cancellationToken = default);
 }

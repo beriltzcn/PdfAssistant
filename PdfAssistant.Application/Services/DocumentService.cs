@@ -7,15 +7,18 @@ public class DocumentService : IDocumentService
     private readonly IPdfTextExtractor _pdfTextExtractor;
     private readonly IDocumentStorage _documentStorage;
     private readonly IDocumentRepository _documentRepository;
+    private readonly IDocumentChunkRepository _documentChunkRepository;
 
     public DocumentService(
         IPdfTextExtractor pdfTextExtractor,
         IDocumentStorage documentStorage,
-        IDocumentRepository documentRepository)
+        IDocumentRepository documentRepository,
+        IDocumentChunkRepository documentChunkRepository)
     {
         _pdfTextExtractor = pdfTextExtractor;
         _documentStorage = documentStorage;
         _documentRepository = documentRepository;
+        _documentChunkRepository = documentChunkRepository;
     }
 
     public async Task<DocumentSummary> SaveDocumentAsync(
@@ -29,7 +32,7 @@ public class DocumentService : IDocumentService
             cancellationToken);
 
         var pageCount = 0;
-        var status = DocumentStatus.Uploaded;
+        var status = DocumentStatus.Processing;
 
         try
         {
@@ -40,7 +43,7 @@ public class DocumentService : IDocumentService
             if (pages is not null)
             {
                 pageCount = pages.Count;
-                status = DocumentStatus.Extracted;
+                status = DocumentStatus.Processing;
             }
         }
         catch (OperationCanceledException)
@@ -81,5 +84,25 @@ public class DocumentService : IDocumentService
         return await _pdfTextExtractor.ExtractTextAsync(
             filePath,
             cancellationToken);
+    }
+
+    public async Task<bool> DeleteAsync(
+        string storedFileName,
+        CancellationToken cancellationToken = default)
+    {
+        await _documentChunkRepository.DeleteByFileNameAsync(
+            storedFileName,
+            cancellationToken);
+
+        var deleted = await _documentRepository.DeleteAsync(
+            storedFileName,
+            cancellationToken);
+
+        if (deleted)
+        {
+            _documentStorage.Delete(storedFileName);
+        }
+
+        return deleted;
     }
 }

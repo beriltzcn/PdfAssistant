@@ -48,9 +48,6 @@ builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 builder.Services.AddScoped<
     IDocumentProcessingService,
     DocumentProcessingService>();
-builder.Services.AddScoped<
-    IDocumentDeletionService,
-    DocumentDeletionService>();
 builder.Services.AddScoped<IPdfTextExtractor, PdfTextExtractor>();
 builder.Services.AddScoped<ITextChunker, TextChunker>();
 builder.Services.AddScoped<IDocumentEmbeddingService, DocumentEmbeddingService>();
@@ -73,7 +70,7 @@ var uploadFolder = Path.Combine(
 builder.Services.AddScoped<IDocumentStorage>(
     _ => new LocalDocumentStorage(uploadFolder));
 
-// Swagger servisleri
+// Swagger services
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -89,5 +86,12 @@ app.UseCors(clientCorsPolicy);
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapGet(
+    "/health",
+    () => Results.Ok(new
+    {
+        Status = "ok",
+        Service = "PdfAssistant.Api"
+    }));
 
 app.Run();

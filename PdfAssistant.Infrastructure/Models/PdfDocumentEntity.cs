@@ -1,6 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
+using PdfAssistant.Application.Models;
 
 namespace PdfAssistant.Infrastructure.Models;
 
@@ -16,7 +15,7 @@ public class PdfDocumentEntity
 
     public int PageCount { get; set; }
 
-    public string Status { get; set; } = "uploaded";
+    public string Status { get; set; } = DocumentStatus.Processing;
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 }

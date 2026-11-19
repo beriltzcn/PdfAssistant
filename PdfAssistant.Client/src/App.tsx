@@ -79,8 +79,6 @@ function formatFileSize(bytes: number) {
 
 function getStatusLabel(status: string) {
   const labels: Record<string, string> = {
-    uploaded: 'Uploaded',
-    extracted: 'Ready to process',
     processing: 'Processing',
     ready: 'Ready',
     failed: 'Failed',
@@ -333,7 +331,6 @@ function App() {
             <a className="active" href="#documents" aria-current="page">
               Documents
             </a>
-            <span aria-disabled="true">Chats</span>
           </nav>
 
           <div className="header-actions">
@@ -349,9 +346,6 @@ function App() {
               </span>
             </div>
 
-            <div className="avatar" aria-label="Beril profile">
-              B
-            </div>
           </div>
         </div>
       </header>

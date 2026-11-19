@@ -482,4 +482,7 @@ $RECYCLE.BIN/
 *.swp
 
 PdfAssistant.Api/App_Data/UploadedFiles/
+PdfAssistant.Api/App_Data/*.db
+PdfAssistant.Api/App_Data/*.db-shm
+PdfAssistant.Api/App_Data/*.db-wal
 **/appsettings.Development.json
